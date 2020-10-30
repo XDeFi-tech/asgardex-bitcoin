@@ -1,4 +1,4 @@
-# `@thorchain/asgardex-bitcoin`
+# `asgardex-bitcoin`
 
 Implements the following:
 
@@ -28,10 +28,6 @@ interface BitcoinClient {
 - `client` - Custom client for communicating with Bitcoin using [BIP39](https://github.com/bitcoinjs/bip39) [bitcoinjs-lib](https://github.com/bitcoinjs/bitcoinjs-lib) and [WIF](https://github.com/bitcoinjs/wif)
 
 ## Installation
-
-```
-yarn add @thorchain/asgardex-bitcoin
-```
 
 Following dependencies will be installed into your project:
 
