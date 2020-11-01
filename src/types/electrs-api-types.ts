@@ -1,27 +1,16 @@
-export type UtxoStatus = {
+export type status = {
   confirmed: boolean
   block_height?: number
   block_hash?: string
   block_time: number
 }
 
-export type VOut = {
+export type vout = {
   scriptpubkey: string
   scriptpubkey_asm: string
   scriptpubkey_type: string
   scriptpubkey_address?: string
   value: number
-}
-
-export type VIn = {
-  txid: string
-  vout: number
-  scriptsig: string
-  scriptsig_asm: string
-  is_coinbase: boolean
-  sequence: number
-  witness: Array<string>
-  prevout: VOut
 }
 
 export type Estimates = {
@@ -52,7 +41,7 @@ export type Utxo = {
   txid: string
   vout: number
   value: number
-  status: UtxoStatus
+  status: status
 }
 
 export type Txs = Array<Tx>
@@ -64,9 +53,18 @@ export type Tx = {
   size: number
   weight: number
   fee: number
-  status: UtxoStatus
-  vin: Array<VIn>
-  vout: Array<VOut>
+  status: status
+  vin: Array<{
+    txid: string
+    vout: number
+    scriptsig: string
+    scriptsig_asm: string
+    is_coinbase: boolean
+    sequence: number
+    witness: Array<string>
+    prevout: vout
+  }>
+  vout: Array<vout>
 }
 
 export type Blocks = Array<Block>

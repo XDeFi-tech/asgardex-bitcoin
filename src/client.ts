@@ -4,7 +4,7 @@ import * as WIF from 'wif' // https://github.com/bitcoinjs/wif
 import * as Utils from './utils'
 import { getAddressTxs, getAddressUtxos, getTxInfo, getAddressInfo, getFeeEstimates, broadcastTx } from './electrs-api'
 import { Estimates, Txs, Address } from './types/electrs-api-types'
-import { FeeOptions, FeeOptionsKey, NormalTxParams, VaultTxParams } from './types/client-types'
+import { FeeOptions } from './types/client-types'
 
 // https://blockchair.com/api/docs#link_300
 // const baseUrl = 'https://api.blockchair.com/bitcoin/'
@@ -36,8 +36,6 @@ interface BitcoinClient {
 
   getNetwork(net: Network): Bitcoin.networks.Network
 
-  getExplorerUrl(): string
-
   setBaseUrl(endpoint: string): void
 
   getAddress(): string
@@ -46,17 +44,17 @@ interface BitcoinClient {
 
   scanUTXOs(): Promise<void>
 
-  getBalance(): Promise<number>
+  getBalance(): number
 
   getBalanceForAddress(address?: string): Promise<number>
 
   getTransactions(address: string): Promise<Txs>
 
-  calcFees(addressTo: string, memo?: string): Promise<FeeOptions>
+  calcFees(memo?: string): Promise<FeeOptions>
 
-  vaultTx(params: VaultTxParams): Promise<string>
+  vaultTx(addressVault: string, valueOut: number, memo: string, feeRate: number): Promise<string>
 
-  normalTx(params: NormalTxParams): Promise<string>
+  normalTx(addressTo: string, valueOut: number, feeRate: number): Promise<string>
 }
 
 /**
@@ -81,7 +79,7 @@ class Client implements BitcoinClient {
   }
 
   // Sets this.phrase to be accessed later
-  setPhrase = (phrase?: string): void => {
+  setPhrase = (phrase?: string) => {
     if (phrase) {
       if (BIP39.validateMnemonic(phrase)) {
         this.phrase = phrase
@@ -122,10 +120,6 @@ class Client implements BitcoinClient {
     this.electrsAPI = endpoint
   }
 
-  getExplorerUrl = (): string => {
-    return this.net === Network.TEST ? 'https://blockstream.info/testnet/' : 'https://blockstream.info/'
-  }
-
   // Generates a network-specific key-pair by first converting the buffer to a Wallet-Import-Format (WIF)
   // The address is then decoded into type P2WPKH and returned.
   getAddress = (): string => {
@@ -164,10 +158,10 @@ class Client implements BitcoinClient {
   }
 
   // Scans UTXOs on Address
-  scanUTXOs = async (): Promise<void> => {
+  scanUTXOs = async (addressOpt?: string): Promise<void> => {
     try {
       this.utxos = [] // clear existing utxos
-      const address = this.getAddress()
+      const address = addressOpt || this.getAddress()
       const utxos = await getAddressUtxos(this.electrsAPI, address)
 
       for (let i = 0; i < utxos.length; i++) {
@@ -196,8 +190,7 @@ class Client implements BitcoinClient {
   }
 
   // Returns balance of all UTXOs
-  getBalance = async (): Promise<number> => {
-    await this.scanUTXOs()
+  getBalance = (): number => {
     if (this.utxos && this.utxos.length > 0) {
       const reducer = (accumulator: number, currentValue: number) => accumulator + currentValue
       const sumBalance = this.utxos.map((e) => e.witnessUtxo.value).reduce(reducer)
@@ -216,8 +209,8 @@ class Client implements BitcoinClient {
   }
 
   // Given a desired output, return change
-  private getChange = async (valueOut: number): Promise<number> => {
-    const balance = await this.getBalance()
+  private getChange = (valueOut: number): number => {
+    const balance = this.getBalance()
     let change = 0
     if (balance > 0) {
       if (balance - valueOut > Utils.dustThreshold) {
@@ -288,22 +281,18 @@ class Client implements BitcoinClient {
   // = getting a tx into one of the next 3 blocks would require a feerate >= 87.882 sat/byte,
   // for a total of 4231 sats in fees
   calcFees = async (memo?: string): Promise<FeeOptions> => {
-    await this.scanUTXOs()
     if (this.utxos.length === 0) {
       throw new Error('No utxos to send')
     }
-
-    const feeOption = { feeRate: 0, feeTotal: 0 }
-    const calcdFees: FeeOptions = { fast: feeOption, regular: feeOption, slow: feeOption }
+    const calcdFees: FeeOptions = {}
     const FeeRateEstimates: Estimates = await getFeeEstimates(this.electrsAPI)
     const nextBlockFeeRate = FeeRateEstimates['1'] || 20
-    const feesOptions: Record<FeeOptionsKey, number> = {
+    const feesOptions: { [index: string]: number } = {
       fast: 5,
       regular: 1,
       slow: 0.5,
     }
-    let key: keyof typeof feesOptions
-    for (key in feesOptions) {
+    Object.keys(feesOptions).forEach((key) => {
       const feeRate = nextBlockFeeRate * feesOptions[key]
       let feeTotal
       if (memo) {
@@ -313,28 +302,28 @@ class Client implements BitcoinClient {
         feeTotal = Utils.getNormalFee(this.utxos, feeRate)
       }
       calcdFees[key] = {
-        feeRate,
+        feeRate: feeRate,
         feeTotal,
       }
-    }
+    })
     return calcdFees
   }
 
   // Generates a valid transaction hex to broadcast
-  vaultTx = async ({ addressTo, amount, feeRate, memo }: VaultTxParams): Promise<string> => {
-    const balance = await this.getBalance()
+  vaultTx = async (addressVault: string, valueOut: number, memo: string, feeRate: number): Promise<string> => {
     if (this.utxos.length === 0) {
       throw new Error('No utxos to send')
     }
-    if (!this.validateAddress(addressTo)) {
+    if (!this.validateAddress(addressVault)) {
       throw new Error('Invalid address')
     }
+    const balance = this.getBalance()
     const network = this.getNetwork(this.net)
     const btcKeys = this.getBtcKeys(this.net, this.phrase)
     const OP_RETURN = Utils.compileMemo(memo)
     const feeRateWhole = Number(feeRate.toFixed(0))
     const fee = Utils.getVaultFee(this.utxos, OP_RETURN, feeRateWhole)
-    if (fee + amount > balance) {
+    if (fee + valueOut > balance) {
       throw new Error('Balance insufficient for transaction')
     }
     const psbt = new Bitcoin.Psbt({ network: network }) // Network-specific
@@ -347,8 +336,8 @@ class Client implements BitcoinClient {
       }),
     )
     // Outputs
-    psbt.addOutput({ address: addressTo, value: amount }) // Add output {address, value}
-    const change = await this.getChange(amount + fee)
+    psbt.addOutput({ address: addressVault, value: valueOut }) // Add output {address, value}
+    const change = this.getChange(valueOut + fee)
     if (change > 0) {
       psbt.addOutput({ address: this.getAddress(), value: change }) // Add change
     }
@@ -356,23 +345,23 @@ class Client implements BitcoinClient {
     psbt.signAllInputs(btcKeys) // Sign all inputs
     psbt.finalizeAllInputs() // Finalise inputs
     const txHex = psbt.extractTransaction().toHex() // TX extracted and formatted to hex
-    return await broadcastTx(this.electrsAPI, txHex) // Broadcast TX and get txid
+    return broadcastTx(this.electrsAPI, txHex) // Broadcast TX and get txid
   }
 
   // Generates a valid transaction hex to broadcast
-  normalTx = async ({ addressTo, amount, feeRate }: NormalTxParams): Promise<string> => {
-    const balance = await this.getBalance()
+  normalTx = async (addressTo: string, valueOut: number, feeRate: number): Promise<string> => {
     if (this.utxos.length === 0) {
       throw new Error('No utxos to send')
     }
     if (!this.validateAddress(addressTo)) {
       throw new Error('Invalid address')
     }
+    const balance = this.getBalance()
     const network = this.getNetwork(this.net)
     const btcKeys = this.getBtcKeys(this.net, this.phrase)
     const feeRateWhole = Number(feeRate.toFixed(0))
     const fee = Utils.getNormalFee(this.utxos, feeRateWhole)
-    if (fee + amount > balance) {
+    if (fee + valueOut > balance) {
       throw new Error('Balance insufficient for transaction')
     }
     const psbt = new Bitcoin.Psbt({ network: network }) // Network-specific
@@ -383,15 +372,15 @@ class Client implements BitcoinClient {
         witnessUtxo: UTXO.witnessUtxo,
       }),
     )
-    psbt.addOutput({ address: addressTo, value: amount }) // Add output {address, value}
-    const change = await this.getChange(amount + fee)
+    psbt.addOutput({ address: addressTo, value: valueOut }) // Add output {address, value}
+    const change = this.getChange(valueOut + fee)
     if (change > 0) {
       psbt.addOutput({ address: this.getAddress(), value: change }) // Add change
     }
     psbt.signAllInputs(btcKeys) // Sign all inputs
     psbt.finalizeAllInputs() // Finalise inputs
     const txHex = psbt.extractTransaction().toHex() // TX extracted and formatted to hex
-    return await broadcastTx(this.electrsAPI, txHex) // Broadcast TX and get txid
+    return broadcastTx(this.electrsAPI, txHex) // Broadcast TX and get txid
   }
 }
 

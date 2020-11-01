@@ -1,11 +1,8 @@
-export type FeeOption = {
+export interface FeeOption {
   feeRate: number // sats/byte
   feeTotal: number // sats
 }
 
-export type FeeOptionsKey = 'fast' | 'regular' | 'slow'
-
-export type FeeOptions = Record<FeeOptionsKey, FeeOption>
-
-export type NormalTxParams = { addressTo: string; amount: number; feeRate: number }
-export type VaultTxParams = NormalTxParams & { memo: string }
+export interface FeeOptions {
+  [index: string]: FeeOption
+}

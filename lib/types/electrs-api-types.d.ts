@@ -1,25 +1,15 @@
-export declare type UtxoStatus = {
+export declare type status = {
     confirmed: boolean;
     block_height?: number;
     block_hash?: string;
     block_time: number;
 };
-export declare type VOut = {
+export declare type vout = {
     scriptpubkey: string;
     scriptpubkey_asm: string;
     scriptpubkey_type: string;
     scriptpubkey_address?: string;
     value: number;
-};
-export declare type VIn = {
-    txid: string;
-    vout: number;
-    scriptsig: string;
-    scriptsig_asm: string;
-    is_coinbase: boolean;
-    sequence: number;
-    witness: Array<string>;
-    prevout: VOut;
 };
 export declare type Estimates = {
     [index: string]: number;
@@ -46,7 +36,7 @@ export declare type Utxo = {
     txid: string;
     vout: number;
     value: number;
-    status: UtxoStatus;
+    status: status;
 };
 export declare type Txs = Array<Tx>;
 export declare type Tx = {
@@ -56,9 +46,18 @@ export declare type Tx = {
     size: number;
     weight: number;
     fee: number;
-    status: UtxoStatus;
-    vin: Array<VIn>;
-    vout: Array<VOut>;
+    status: status;
+    vin: Array<{
+        txid: string;
+        vout: number;
+        scriptsig: string;
+        scriptsig_asm: string;
+        is_coinbase: boolean;
+        sequence: number;
+        witness: Array<string>;
+        prevout: vout;
+    }>;
+    vout: Array<vout>;
 };
 export declare type Blocks = Array<Block>;
 export declare type Block = {

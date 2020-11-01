@@ -7,7 +7,7 @@ describe('BitcoinClient Test', () => {
   const electrsAPI = process.env.ELECTRS_API as string
   const btcClient = new Client(net, electrsAPI)
   let address: string
-  const valueOut = 1690843
+  const valueOut = 99000
   const MEMO = 'SWAP:THOR.RUNE'
   // please don't touch the tBTC in these
   const phraseOne = 'cycle join secret hospital slim party write price myth okay long slight'
@@ -62,62 +62,23 @@ describe('BitcoinClient Test', () => {
   })
 
   it('should get the right balance', async () => {
-    const balance = await btcClient.getBalance()
+    await btcClient.scanUTXOs()
+    const balance = btcClient.getBalance()
     expect(balance).toEqual(valueOut)
   })
 
   it('should get the right balance when scanUTXOs is called twice', async () => {
-    const net = Network.TEST
-    btcClient.purgeClient()
-    btcClient.setNetwork(net)
-    btcClient.setPhrase(phrase)
-    const balance = await btcClient.getBalance()
+    await btcClient.scanUTXOs()
+    const balance = btcClient.getBalance()
     expect(balance).toEqual(valueOut)
-    const newBalance = await btcClient.getBalance()
+    await btcClient.scanUTXOs()
+    const newBalance = btcClient.getBalance()
     expect(newBalance).toEqual(valueOut)
   })
 
   it('should get the right history', async () => {
-    const net = Network.TEST
-    btcClient.purgeClient()
-    btcClient.setNetwork(net)
-    btcClient.setPhrase(phrase)
-    address = btcClient.getAddress()
     const txArray = await btcClient.getTransactions(address)
-    expect(txArray[1].txid).toEqual('7fc1d2c1e4017a6aea030be1d4f5365d11abfd295f56c13615e49641c55c54b8')
-  })
-
-  it('should do a normal tx', async () => {
-    const net = Network.TEST
-    btcClient.purgeClient()
-    btcClient.setNetwork(net)
-    btcClient.setPhrase(phraseOne)
-    const txid = await btcClient.normalTx({ addressTo: addyTwo, amount: 2223, feeRate: 1 })
-    expect(txid).toEqual(expect.any(String))
-  })
-
-  it('should purge phrase and utxos', async () => {
-    btcClient.purgeClient()
-    expect(() => {
-      btcClient.getAddress()
-    }).toThrow('Phrase not set')
-    expect(async () => {
-      await btcClient.getBalance()
-    }).rejects.toThrow('Phrase not set')
-  })
-
-  it('should do the vault tx', async () => {
-    const net = Network.TEST
-    btcClient.purgeClient()
-    btcClient.setNetwork(net)
-    btcClient.setPhrase(phraseTwo)
-    const txid = await btcClient.vaultTx({ addressTo: addyOne, amount: 2223, memo: MEMO, feeRate: 1 })
-    expect(txid).toEqual(expect.any(String))
-  })
-
-  it('should get the balance of an address without phrase', async () => {
-    const balance = await btcClient.getBalanceForAddress(address)
-    expect(balance).toEqual(valueOut)
+    expect(txArray[0].txid).toEqual('7fc1d2c1e4017a6aea030be1d4f5365d11abfd295f56c13615e49641c55c54b8')
   })
 
   it('should prevent a tx when fees and valueOut exceed balance', async () => {
@@ -125,31 +86,73 @@ describe('BitcoinClient Test', () => {
     btcClient.purgeClient()
     btcClient.setNetwork(net)
     btcClient.setPhrase(phraseOne)
-    expect(
-      async () => await btcClient.normalTx({ addressTo: addyTwo, amount: 9999999999, feeRate: 1 }),
-    ).rejects.toThrow('Balance insufficient for transaction')
+    await btcClient.scanUTXOs()
+    expect(async () => await btcClient.normalTx(addyTwo, 9999999999, 1)).rejects.toThrow(
+      'Balance insufficient for transaction',
+    )
+  })
+
+  it('should do a normal tx', async () => {
+    const net = Network.TEST
+    btcClient.purgeClient()
+    btcClient.setNetwork(net)
+    btcClient.setPhrase(phraseOne)
+    await btcClient.scanUTXOs()
+    const txid = await btcClient.normalTx(addyTwo, valueOut, 1)
+    expect(txid).toEqual(expect.any(String))
+  })
+
+  it('should do the vault tx', async () => {
+    const net = Network.TEST
+    btcClient.purgeClient()
+    btcClient.setNetwork(net)
+    btcClient.setPhrase(phraseTwo)
+    await btcClient.scanUTXOs()
+    const txid = await btcClient.vaultTx(addyOne, valueOut, MEMO, 1)
+    expect(txid).toEqual(expect.any(String))
+  })
+
+  it('should purge phrase and utxos', async () => {
+    btcClient.purgeClient()
+    expect(() => {
+      btcClient.getAddress()
+    }).toThrow()
+    const balance = btcClient.getBalance()
+    expect(balance).toEqual(0)
+  })
+
+  it('should get the balance of an address without phrase', async () => {
+    const balance = await btcClient.getBalanceForAddress(address)
+    expect(balance).toEqual(valueOut)
+  })
+
+  it('should throw an error when trying to calculate fees without any utxos', async () => {
+    btcClient.purgeClient()
+    expect(async () => await btcClient.calcFees()).rejects.toThrow('No utxos to send')
   })
 
   it('should return estimated fees of a normal tx', async () => {
     const net = Network.TEST
     btcClient.setNetwork(net)
     btcClient.setPhrase(phrase)
+    await btcClient.scanUTXOs()
     const estimates = await btcClient.calcFees()
     expect(estimates['fast'].feeTotal).toEqual(expect.any(Number))
     expect(estimates['slow'].feeRate).toEqual(expect.any(Number))
   })
 
-  // it('should return estimated fees of a vault tx that are more expensive than a normal tx', async () => {
-  //   const net = Network.TEST
-  //   btcClient.purgeClient()
-  //   btcClient.setNetwork(net)
-  //   btcClient.setPhrase(phrase)
-  //   const normalTx = await btcClient.calcFees()
-  //   const vaultTx = await btcClient.calcFees(MEMO)
-  //   const normalTxFee = normalTx['fast'].feeTotal
-  //   const vaultTxFee = vaultTx['fast'].feeTotal
-  //   expect(vaultTxFee).toBeGreaterThan(normalTxFee)
-  // })
+  it('should return estimated fees of a vault tx that are more expensive than a normal tx', async () => {
+    const net = Network.TEST
+    btcClient.purgeClient()
+    btcClient.setNetwork(net)
+    btcClient.setPhrase(phrase)
+    await btcClient.scanUTXOs()
+    const normalTx = await btcClient.calcFees()
+    const vaultTx = await btcClient.calcFees(MEMO)
+    const normalTxFee = normalTx['fast'].feeTotal
+    const vaultTxFee = vaultTx['fast'].feeTotal
+    expect(vaultTxFee).toBeGreaterThan(normalTxFee)
+  })
 
   // it('should calculate average block publish time', async () => {
   //   const blockTimes = await btcClient.getBlockTime()
@@ -161,11 +164,10 @@ describe('BitcoinClient Test', () => {
     btcClient.purgeClient()
     btcClient.setNetwork(net)
     btcClient.setPhrase(phrase)
+    await btcClient.scanUTXOs()
     const invalidAddress = '23vasdvaxc465sddf23'
     expect(async () => await btcClient.getBalanceForAddress(invalidAddress)).rejects.toThrow('Invalid address')
     expect(async () => await btcClient.getTransactions(invalidAddress)).rejects.toThrow('Invalid address')
-    expect(
-      async () => await btcClient.normalTx({ addressTo: invalidAddress, amount: 99000, feeRate: 1 }),
-    ).rejects.toThrow('Invalid address')
+    expect(async () => await btcClient.normalTx(invalidAddress, 99000, 1)).rejects.toThrow('Invalid address')
   })
 })

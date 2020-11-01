@@ -13,6 +13,7 @@ describe('Electrs API Test', () => {
   const electrsAPI = process.env.ELECTRS_API as string
   const address = process.env.VAULT_BTC as string
   const testTxId = '7fc1d2c1e4017a6aea030be1d4f5365d11abfd295f56c13615e49641c55c54b8'
+  const valueOut = 99000
   const hexScript = '6a0e535741503a54484f522e52554e45'
 
   it('electrsAPI was set', () => {
@@ -21,13 +22,14 @@ describe('Electrs API Test', () => {
 
   it('getAddressUtxos should return an array of utxos', async () => {
     const uxtos = await getAddressUtxos(electrsAPI, address)
-    expect(uxtos).toHaveLength(2)
+    expect(uxtos).toHaveLength(1)
+    expect(uxtos[0].value).toEqual(valueOut)
   })
 
   it('getAddressTxs should return an array of txs', async () => {
     const txs = await getAddressTxs(electrsAPI, address)
-    expect(txs).toHaveLength(2)
-    expect(txs[1].txid).toEqual(testTxId)
+    expect(txs).toHaveLength(1)
+    expect(txs[0].txid).toEqual(testTxId)
   })
 
   it('getTxInfo should return OP_RETURN hex script', async () => {
@@ -48,7 +50,7 @@ describe('Electrs API Test', () => {
 
   it('getAddressInfo should return data for an address', async () => {
     const addressInfo = await getAddressInfo(electrsAPI, address)
-    expect(addressInfo.chain_stats.funded_txo_sum).toEqual(1690843)
+    expect(addressInfo.chain_stats.funded_txo_sum).toEqual(99000)
   })
 
   // it('broadcastTx should broadcast a tx and return a txid', async () => {
