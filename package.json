@@ -33,7 +33,7 @@
     "postversion": "git push --follow-tags"
   },
   "dependencies": {
-    "axios": "^0.19.2",
+    "axios": "^0.21.1",
     "bip39": "^3.0.2",
     "bitcoinjs-lib": "^5.1.10",
     "wif": "^2.0.6"
